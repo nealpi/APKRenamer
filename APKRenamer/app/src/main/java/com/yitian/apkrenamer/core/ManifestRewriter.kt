@@ -12,11 +12,13 @@ object ManifestRewriter {
 
     private const val TAG = "ManifestRewriter"
 
-    // ARSCLib 的 ID_xxx 是普通 static int，不是 Kotlin 编译期常量，所以用 val 而不是 const val
+    // ARSCLib 的 ID_xxx 是 Java static int，不是 Kotlin 编译期常量，用 val
     private val ATTR_NAME = AndroidManifestBlock.ID_name
     private val ATTR_LABEL = AndroidManifestBlock.ID_label
     private val ATTR_AUTHORITIES = AndroidManifestBlock.ID_authorities
     private val ATTR_TARGET_ACTIVITY = AndroidManifestBlock.ID_targetActivity
+
+    private val COMPONENT_TAGS = listOf("activity", "service", "receiver", "provider")
 
     fun rewrite(
         manifest: AndroidManifestBlock,
@@ -25,33 +27,33 @@ object ManifestRewriter {
         newDisplayName: String,
         authoritySuffix: String,
     ) {
-        // ---- A. 顶层 package ----
+        // A. 顶层 package
         manifest.packageName = newPackage
 
-        // ---- B. 找 <application> —— 用 ARSCLib 提供的便捷方法，绕开 getElementByTagName ----
+        // B. 找 <application>
         val application: ResXmlElement = manifest.applicationElement
             ?: error("manifest 中未找到 <application> 节点")
 
-        // application 自身的 android:name（自定义 Application 类）
+        // application 自己的 android:name（自定义 Application 类）
         expandAttrIfRelative(application, ATTR_NAME, "android:name", oldPackage)
 
         // D. label
         setStringAttribute(application, ATTR_LABEL, "label", newDisplayName)
 
-        // ---- C. 遍历 application 的子节点，处理组件 ----
-        for (child in application.listElements()) {
-            when (child.name) {
-                "activity", "service", "receiver", "provider" -> {
-                    expandAttrIfRelative(child, ATTR_NAME, "android:name", oldPackage)
-                    if (child.name == "provider") {
-                        rewriteAuthority(child, authoritySuffix)
-                    }
-                }
-                "activity-alias" -> {
-                    expandAttrIfRelative(child, ATTR_NAME, "android:name", oldPackage)
-                    expandAttrIfRelative(child, ATTR_TARGET_ACTIVITY, "android:targetActivity", oldPackage)
+        // C. 按标签名分别处理组件
+        for (tag in COMPONENT_TAGS) {
+            for (child in application.listElements(tag)) {
+                expandAttrIfRelative(child, ATTR_NAME, "android:name", oldPackage)
+                if (tag == "provider") {
+                    rewriteAuthority(child, authoritySuffix)
                 }
             }
+        }
+
+        // activity-alias 单独处理（多一个 targetActivity 属性）
+        for (alias in application.listElements("activity-alias")) {
+            expandAttrIfRelative(alias, ATTR_NAME, "android:name", oldPackage)
+            expandAttrIfRelative(alias, ATTR_TARGET_ACTIVITY, "android:targetActivity", oldPackage)
         }
     }
 
