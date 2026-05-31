@@ -103,8 +103,12 @@ class MainActivity : AppCompatActivity() {
                 binding.progress.progress = 95
                 binding.tvStage.text = "请选择保存位置…"
                 binding.btnStart.isEnabled = false
-                saveApkLauncher.launch(state.suggestedFilename)
+                // 用 consume 方法确保 launcher 只触发一次
+                vm.consumeSaveLocationRequest()?.let {
+                    saveApkLauncher.launch(it.suggestedFilename)
+                }
             }
+
             is RenameViewModel.UiState.Done -> {
                 binding.progress.visibility = View.GONE
                 binding.tvStage.text = "完成"
