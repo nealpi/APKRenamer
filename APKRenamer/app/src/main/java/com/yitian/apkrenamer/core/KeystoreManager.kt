@@ -17,15 +17,6 @@ import java.security.Security
 import java.security.cert.X509Certificate
 import java.util.Date
 
-/**
- * 管理一个长期复用的自签 keystore。
- *
- * 设计原则：
- *  - 第一次跑时生成一个 RSA-2048 的 25 年期自签证书，存到 filesDir/apkrenamer.jks
- *  - 之后所有改名出来的 APK 都用同一把 key 签名
- *  - 这样用户用本工具改出的多个 APK 之间可以互相覆盖更新（同 key 同包名时）
- *  - keystore 密码写死在代码里（用户视角无感知；不是用来抗逆向的，只为 JCA API 满意）
- */
 class KeystoreManager(private val context: Context) {
 
     companion object {
@@ -39,20 +30,16 @@ class KeystoreManager(private val context: Context) {
         private const val SIG_ALGORITHM = "SHA256withRSA"
 
         init {
-            // BouncyCastle Provider 注册：放静态块，多次调用 idempotent
-            if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
-                Security.addProvider(BouncyCastleProvider())
-            }
+            // 关键修复：Android 内置的 "BC" 是阉割版（缺签名算法），
+            // 必须先把它卸了，再把我们打包的完整 BouncyCastle 插到最前面。
+            Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
+            Security.insertProviderAt(BouncyCastleProvider(), 1)
         }
     }
 
     private val keystoreFile: File
         get() = File(context.filesDir, KEYSTORE_FILENAME)
 
-    /**
-     * 返回签名所需的 (PrivateKey, X509Certificate) 对。
-     * 若 keystore 不存在则首次生成。线程安全：synchronized 防并发首次生成。
-     */
     @Synchronized
     fun loadOrCreate(): SigningMaterial {
         val ks = KeyStore.getInstance("PKCS12")
@@ -61,10 +48,9 @@ class KeystoreManager(private val context: Context) {
                 keystoreFile.inputStream().use { ks.load(it, STORE_PASSWORD.toCharArray()) }
                 val key = ks.getKey(KEY_ALIAS, KEY_PASSWORD.toCharArray()) as PrivateKey
                 val cert = ks.getCertificate(KEY_ALIAS) as X509Certificate
-                Log.d(TAG, "loaded existing keystore (cert subject = ${cert.subjectX500Principal})")
+                Log.d(TAG, "loaded existing keystore")
                 return SigningMaterial(key, cert)
             } catch (t: Throwable) {
-                // 文件存在但解析失败 —— 损坏了，丢掉重生成
                 Log.w(TAG, "existing keystore corrupted, regenerating", t)
                 keystoreFile.delete()
             }
@@ -73,7 +59,7 @@ class KeystoreManager(private val context: Context) {
     }
 
     private fun createAndPersist(ks: KeyStore): SigningMaterial {
-        Log.d(TAG, "generating new keystore at ${keystoreFile.absolutePath}")
+        Log.d(TAG, "generating new keystore")
 
         val keyPair = KeyPairGenerator.getInstance("RSA").run {
             initialize(KEY_SIZE, SecureRandom())
@@ -86,13 +72,9 @@ class KeystoreManager(private val context: Context) {
         val serial = BigInteger(64, SecureRandom())
 
         val certBuilder = JcaX509v3CertificateBuilder(
-            /* issuer    = */ subject,   // 自签
-            /* serial    = */ serial,
-            /* notBefore = */ now,
-            /* notAfter  = */ notAfter,
-            /* subject   = */ subject,
-            /* publicKey = */ keyPair.public,
+            subject, serial, now, notAfter, subject, keyPair.public
         )
+        // 显式指定 provider，确保用我们打包的完整版 BouncyCastle
         val signer = JcaContentSignerBuilder(SIG_ALGORITHM)
             .setProvider(BouncyCastleProvider.PROVIDER_NAME)
             .build(keyPair.private)
