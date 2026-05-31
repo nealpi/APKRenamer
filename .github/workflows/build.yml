@@ -7,6 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # 关键：所有 run 步骤默认在 APKRenamer/ 子目录里执行
+    defaults:
+      run:
+        working-directory: APKRenamer
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,16 +24,14 @@ jobs:
 
       - name: Show repo structure
         run: |
-          echo "=== root ==="
+          echo "=== pwd ==="
+          pwd
+          echo "=== ls here ==="
           ls -la
           echo "=== app ==="
           ls -la app/ || echo "NO app/"
-          echo "=== app/src/main ==="
-          ls -la app/src/main/ || echo "NO app/src/main/"
           echo "=== java tree ==="
           find app/src/main/java -type f || echo "NO java sources"
-          echo "=== res tree ==="
-          find app/src/main/res -type f || echo "NO res"
 
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9 --distribution-type bin
@@ -47,5 +50,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: APKRenamer
-          path: APKRenamer.apk
+          # upload-artifact 的 path 是从仓库根目录算的，所以要带上 APKRenamer/ 前缀
+          path: APKRenamer/APKRenamer.apk
           if-no-files-found: error
