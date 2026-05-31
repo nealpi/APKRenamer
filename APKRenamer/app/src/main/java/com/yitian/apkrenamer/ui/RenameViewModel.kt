@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import com.yitian.apkrenamer.core.ApkRenamer
 import com.yitian.apkrenamer.core.ApkSignerImpl
 import com.yitian.apkrenamer.core.KeystoreManager
-import com.yitian.apkrenamer.core.RenameResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +33,9 @@ class RenameViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow<UiState>(UiState.Idle)
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    // 关键修复：标记保存对话框是否已经弹过，防止 lifecycle 重启时重弹
+    private var saveLauncherConsumed = false
 
     private val _selectedApkUri = MutableStateFlow<Uri?>(null)
     val selectedApkUri: StateFlow<Uri?> = _selectedApkUri.asStateFlow()
@@ -66,10 +68,23 @@ class RenameViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reset() {
         _state.value = UiState.Idle
+        saveLauncherConsumed = false
+    }
+
+    /**
+     * 给 UI 调用：取出待保存的请求；只会成功取出一次。
+     * 之后即使 lifecycle 重启 collect 把同样 state 再发一遍，这里会返回 null。
+     */
+    fun consumeSaveLocationRequest(): UiState.NeedSaveLocation? {
+        val s = _state.value as? UiState.NeedSaveLocation ?: return null
+        if (saveLauncherConsumed) return null
+        saveLauncherConsumed = true
+        return s
     }
 
     private suspend fun runRename(inputUri: Uri, displayName: String) {
         val ctx: Context = getApplication()
+        saveLauncherConsumed = false
         _state.value = UiState.Running("准备…", 1)
 
         val outcome = try {
@@ -83,7 +98,6 @@ class RenameViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        // 签名阶段
         val signed = try {
             withContext(Dispatchers.IO) {
                 _state.value = UiState.Running("正在生成签名…", 82)
@@ -99,7 +113,6 @@ class RenameViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        _state.value = UiState.Running("等待选择保存位置…", 95)
         _state.value = UiState.NeedSaveLocation(
             signedApk = signed,
             newPackageName = outcome.newPackageName,
@@ -132,10 +145,10 @@ class RenameViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelSave() {
         (_state.value as? UiState.NeedSaveLocation)?.cleanup?.invoke()
         _state.value = UiState.Idle
+        saveLauncherConsumed = false
     }
 
     private fun sanitizeFilename(input: String): String {
-        // 文件名过滤：保留中文、字母数字、连字符、下划线，其它转下划线
         val filtered = input.map { c ->
             if (c.isLetterOrDigit() || c == '-' || c == '_' || c in '一'..'鿿') c else '_'
         }.joinToString("")
