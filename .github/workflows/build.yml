@@ -17,8 +17,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Show repo structure
+        run: |
+          echo "=== root ==="
+          ls -la
+          echo "=== app ==="
+          ls -la app/ || echo "NO app/"
+          echo "=== app/src/main ==="
+          ls -la app/src/main/ || echo "NO app/src/main/"
+          echo "=== java tree ==="
+          find app/src/main/java -type f || echo "NO java sources"
+          echo "=== res tree ==="
+          find app/src/main/res -type f || echo "NO res"
 
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9 --distribution-type bin
@@ -26,12 +36,14 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK for easy download
+      - name: Rename APK
+        if: success()
         run: |
           APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           cp "$APK" APKRenamer.apk
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: APKRenamer
