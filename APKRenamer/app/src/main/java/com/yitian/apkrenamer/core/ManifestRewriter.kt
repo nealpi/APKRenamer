@@ -5,20 +5,17 @@ import com.reandroid.arsc.chunk.xml.AndroidManifestBlock
 import com.reandroid.arsc.chunk.xml.ResXmlAttribute
 import com.reandroid.arsc.chunk.xml.ResXmlElement
 
-/**
- * AndroidManifest 改写器（已适配 ARSCLib V1.3.8 API）。
- */
 object ManifestRewriter {
 
     private const val TAG = "ManifestRewriter"
 
-    // ARSCLib 的 ID_xxx 是 Java static int，不是 Kotlin 编译期常量，用 val
     private val ATTR_NAME = AndroidManifestBlock.ID_name
     private val ATTR_LABEL = AndroidManifestBlock.ID_label
     private val ATTR_AUTHORITIES = AndroidManifestBlock.ID_authorities
     private val ATTR_TARGET_ACTIVITY = AndroidManifestBlock.ID_targetActivity
 
     private val COMPONENT_TAGS = listOf("activity", "service", "receiver", "provider")
+    private val PERMISSION_TAGS = listOf("permission", "permission-tree", "permission-group")
 
     fun rewrite(
         manifest: AndroidManifestBlock,
@@ -30,17 +27,44 @@ object ManifestRewriter {
         // A. 顶层 package
         manifest.packageName = newPackage
 
-        // B. 找 <application>
+        // 新增：拿到 manifest 根节点（用于改 <permission> 等）
+        val manifestRoot: ResXmlElement = manifest.manifestElement
+            ?: error("manifest 根节点丢失")
+
+        // ---- 关键修复：处理自定义 <permission>、<permission-tree>、<permission-group> ----
+        // 不改名会跟原 APK 冲突，整包装不上
+        for (tag in PERMISSION_TAGS) {
+            for (p in manifestRoot.listElements(tag)) {
+                val attr = p.searchAttributeByResourceId(ATTR_NAME) ?: continue
+                val name = attr.valueAsString ?: continue
+                if (name.isNotBlank()) {
+                    val renamed = "$name.clone_$authoritySuffix"
+                    attr.setValueAsString(renamed)
+                    Log.d(TAG, "<$tag> android:name: $name -> $renamed")
+                }
+            }
+        }
+
+        // 同步改写 <uses-permission>：如果引用的是原 APK 自定义的权限，也要跟着改
+        for (up in manifestRoot.listElements("uses-permission")) {
+            val attr = up.searchAttributeByResourceId(ATTR_NAME) ?: continue
+            val name = attr.valueAsString ?: continue
+            // 系统权限（android.permission.xxx）不动，只动以原包名开头的自定义权限
+            if (name.startsWith("$oldPackage.")) {
+                val renamed = "$name.clone_$authoritySuffix"
+                attr.setValueAsString(renamed)
+                Log.d(TAG, "<uses-permission> $name -> $renamed")
+            }
+        }
+
+        // B. <application>
         val application: ResXmlElement = manifest.applicationElement
             ?: error("manifest 中未找到 <application> 节点")
 
-        // application 自己的 android:name（自定义 Application 类）
         expandAttrIfRelative(application, ATTR_NAME, "android:name", oldPackage)
-
-        // D. label
         setStringAttribute(application, ATTR_LABEL, "label", newDisplayName)
 
-        // C. 按标签名分别处理组件
+        // C. 组件
         for (tag in COMPONENT_TAGS) {
             for (child in application.listElements(tag)) {
                 expandAttrIfRelative(child, ATTR_NAME, "android:name", oldPackage)
@@ -50,7 +74,6 @@ object ManifestRewriter {
             }
         }
 
-        // activity-alias 单独处理（多一个 targetActivity 属性）
         for (alias in application.listElements("activity-alias")) {
             expandAttrIfRelative(alias, ATTR_NAME, "android:name", oldPackage)
             expandAttrIfRelative(alias, ATTR_TARGET_ACTIVITY, "android:targetActivity", oldPackage)
