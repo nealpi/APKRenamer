@@ -1,12 +1,15 @@
 name: Build APK
 
 on:
-  # 允许手动触发 —— 不需要 push，在网页上点一下就行
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: APKRenamer
 
     steps:
       - name: Checkout
@@ -18,23 +21,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      # 关键：装一个我们想要的版本的 Gradle，不再生成 wrapper
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.9 --distribution-type bin
+      - name: Show repo structure
+        run: |
+          pwd
+          ls -la
+          echo "--- app/ ---"
+          ls -la app/ || echo "NO app/"
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tail -50
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK for easy download
+      - name: Rename APK
+        if: success()
         run: |
           APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           cp "$APK" APKRenamer.apk
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: APKRenamer
-          path: APKRenamer.apk
+          path: APKRenamer/APKRenamer.apk
           if-no-files-found: error
