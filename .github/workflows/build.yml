@@ -7,7 +7,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # 关键：所有 run 步骤默认在 APKRenamer/ 子目录里执行
     defaults:
       run:
         working-directory: APKRenamer
@@ -22,22 +21,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # 关键：装一个我们想要的版本的 Gradle，不再生成 wrapper
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Show repo structure
         run: |
-          echo "=== pwd ==="
           pwd
-          echo "=== ls here ==="
           ls -la
-          echo "=== app ==="
+          echo "--- app/ ---"
           ls -la app/ || echo "NO app/"
-          echo "=== java tree ==="
-          find app/src/main/java -type f || echo "NO java sources"
-
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.9 --distribution-type bin
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
         if: success()
@@ -50,6 +48,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: APKRenamer
-          # upload-artifact 的 path 是从仓库根目录算的，所以要带上 APKRenamer/ 前缀
           path: APKRenamer/APKRenamer.apk
           if-no-files-found: error
