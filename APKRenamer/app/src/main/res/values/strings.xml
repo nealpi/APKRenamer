@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">APK 改包名工具</string>
+    <string name="hint_intro">用于让同一应用的不同版本能在同一台设备上并存。选 APK → 输入新显示名 → 生成可独立安装的 APK。</string>
+    <string name="btn_pick_apk">选择 APK 文件</string>
+    <string name="no_apk_selected">尚未选择 APK</string>
+    <string name="hint_display_name">新的应用显示名（如：微信备份）</string>
+    <string name="hint_display_name_help">同一个显示名会生成同一个新包名，便于以后覆盖更新。</string>
+    <string name="btn_start">开始</string>
+    <string name="btn_reset">重置</string>
+    <string name="ready">就绪</string>
+    <string name="disclaimer">⚠ 加固应用、银行类、做了签名校验的应用改名后可能无法正常运行——这是技术原理决定的，并非本工具问题。</string>
+</resources>
