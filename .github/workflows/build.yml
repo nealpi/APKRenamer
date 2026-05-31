@@ -1,77 +1,52 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+name: Build APK
 
-android {
-    namespace = "com.yitian.apkrenamer"
-    compileSdk = 34
+on:
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId = "com.yitian.apkrenamer"
-        minSdk = 29
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-    }
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-        debug {
-            isMinifyEnabled = false
-        }
-    }
+    defaults:
+      run:
+        working-directory: APKRenamer
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-    buildFeatures {
-        viewBinding = true
-    }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    packaging {
-        resources {
-            excludes += setOf(
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE*",
-                "META-INF/NOTICE*",
-                "META-INF/AL2.0",
-                "META-INF/LGPL2.1",
-                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
-                "META-INF/*.kotlin_module"
-            )
-        }
-    }
-}
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.activity:activity-ktx:1.9.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.documentfile:documentfile:1.0.1")
+      # 关键：装一个我们想要的版本的 Gradle，不再生成 wrapper
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+      - name: Show repo structure
+        run: |
+          pwd
+          ls -la
+          echo "--- app/ ---"
+          ls -la app/ || echo "NO app/"
 
-    // ====== APK 修改与签名核心 ======
-    // 注意 JitPack 上的 tag 是大写 V 开头
-    implementation("com.github.REAndroid:ARSCLib:V1.3.8")
-    implementation("com.github.REAndroid:APKEditor:V1.4.9")
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-    implementation("com.android.tools.build:apksig:8.5.2")
+      - name: Rename APK
+        if: success()
+        run: |
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          cp "$APK" APKRenamer.apk
 
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
-}
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: APKRenamer
+          path: APKRenamer/APKRenamer.apk
+          if-no-files-found: error
